@@ -10,13 +10,14 @@ import hashlib
 # =======================
 # Configuration
 # =======================
-TELEGRAM_BOT_TOKEN = "8369733496:AAFu8IsP_H3kitEurVcC-xPoej2T9rtVeAA"  # ← তোমার NUMBER BOT token
-TELEGRAM_CHAT_ID = "-1003221166532"   # ← OTP group ID
+TELEGRAM_BOT_TOKEN = "8369733496:AAFu8IsP_H3kitEurVcC-xPoej2T9rtVeAA"
+TELEGRAM_CHAT_ID = "-1003221166532"
 HADI_API_URL = "http://147.135.212.197/crapi/had/viewstats"
 HADI_API_KEY = "RldTRDRSQkdngpFzh4lveGNXdl9SYIpYZmyCYXFq"
 POLL_INTERVAL = 2  # seconds
 
-DATA_DIR = os.environ.get("DATA_DIR", "/app/data")
+# ✅ /tmp/data ব্যবহার করো — Render এ writable
+DATA_DIR = os.environ.get("DATA_DIR", "/tmp/data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 USERS_FILE = Path(os.path.join(DATA_DIR, "users_data.json"))
@@ -35,7 +36,6 @@ def load_seen():
         return set()
 
 def save_seen(seen_set):
-    # শুধু last 2000টা রাখো
     seen_list = list(seen_set)[-2000:]
     with SEEN_FILE.open("w") as f:
         json.dump(seen_list, f, indent=2)
@@ -79,7 +79,7 @@ COUNTRY_CODE_NAME = {
     "855": "🇰🇭 Cambodia", "992": "🇹🇯 Tajikistan", "226": "🇧🇫 Burkina Faso",
     "251": "🇪🇹 Ethiopia", "967": "🇾🇪 Yemen", "386": "🇸🇮 Slovenia",
     "962": "🇯🇴 Jordan", "254": "🇰🇪 Kenya", "255": "🇹🇿 Tanzania",
-    "221": "🇸🇳 Senegal", "972": "🇮🇱 Israel", "93": "🇦🇫 Afghanistan",
+    "221": "🇸🇳 Senegal", "972": "🇮🇱 Israel",
 }
 
 def infer_country(phone, country_field=None):
@@ -127,24 +127,17 @@ def mask_phone(phone):
 # Number matching
 # =======================
 def numbers_match_score(stored, incoming):
-    """Strict matching with score. Higher = better match. 0 = no match."""
     s = re.sub(r'[^\d*]', '', str(stored))
     i = re.sub(r'[^\d]', '', str(incoming))
-
-    # Exact match
     if s == i:
         return 10000
-
     star_idx = s.find('*')
     if star_idx == -1:
         return 0
-
     prefix = s[:star_idx]
     suffix = s[s.rfind('*') + 1:]
     stars = s[star_idx: s.rfind('*') + 1]
     star_count = stars.count('*')
-
-    # Strict length check: prefix + suffix + exactly star_count digits
     expected_len = len(prefix) + len(suffix) + star_count
     if len(i) != expected_len:
         return 0
@@ -152,7 +145,6 @@ def numbers_match_score(stored, incoming):
         return 0
     if suffix and not i.endswith(suffix):
         return 0
-
     return len(prefix) + len(suffix)
 
 
@@ -167,15 +159,11 @@ def notify_user(raw_phone, otp):
 
         users = data.get("users", {})
 
-        # active_numbers কে tracked_numbers থেকে rebuild করো
-        # "received" status ও রাখো — একই number এ একাধিক OTP আসতে পারে
         active_numbers = {}
         for uid, u in users.items():
             for t in u.get("tracked_numbers", []):
-                # waiting বা received — দুটোই active রাখো
                 if t.get("status") in ("waiting", "received"):
                     active_numbers[t["number"]] = int(uid)
-            # backward compat
             if not u.get("tracked_numbers") and u.get("active_number"):
                 active_numbers[u["active_number"]] = int(uid)
 
@@ -185,7 +173,6 @@ def notify_user(raw_phone, otp):
 
         phone_clean = re.sub(r'[^\d]', '', str(raw_phone))
 
-        # Best match খোঁজো — score based
         best_score = 0
         matched_uid = None
         matched_key = None
@@ -203,10 +190,8 @@ def notify_user(raw_phone, otp):
 
         user = users.get(str(matched_uid))
         if not user:
-            print(f"⚠️ User {matched_uid} not found")
             return
 
-        # tracked_numbers এ এই number খোঁজো
         tracked = user.get("tracked_numbers", [])
         earn = 0.0
         display_number = matched_key
@@ -216,9 +201,8 @@ def notify_user(raw_phone, otp):
             if t["number"] == matched_key:
                 received_otps = t.get("received_otps", [])
                 if otp in received_otps:
-                    print(f"⚠️ Same OTP duplicate ignored for {matched_key}: {otp}")
-                    return  # same OTP — ignore
-                # নতুন OTP — allow
+                    print(f"⚠️ Duplicate OTP ignored: {otp}")
+                    return
                 received_otps.append(otp)
                 t["received_otps"] = received_otps
                 t["status"] = "received"
@@ -228,34 +212,27 @@ def notify_user(raw_phone, otp):
                 break
 
         if not found_tracked:
-            # backward compat — tracked_numbers নেই
             earn = float(user.get("active_usdt", 0.0))
             user["waiting_otp"] = False
 
-        # Balance update
         user["balance"] = round(float(user.get("balance", 0.0)) + earn, 4)
         user["total_earned"] = round(float(user.get("total_earned", 0.0)) + earn, 4)
         user["otp_count"] = int(user.get("otp_count", 0)) + 1
 
-        # active_numbers থেকে সরাবো না — একই number এ পরের OTP ও match হওয়ার জন্য
         if user.get("active_number") == matched_key:
             user["waiting_otp"] = False
 
-        # Save
         with USERS_FILE.open("w", encoding="utf-8") as f:
             json.dump({"users": users, "active_numbers": active_numbers}, f, ensure_ascii=False, indent=2)
 
-        # OTP count দেখাও (একাধিক হলে)
         all_otps = []
         for t in tracked:
             if t["number"] == matched_key:
                 all_otps = t.get("received_otps", [otp])
                 break
         otp_count = len(all_otps)
-        otp_count_line = f"📊 Total OTPs on this number: <b>{otp_count}x</b>\n" if otp_count > 1 else ""
+        otp_count_line = f"📊 Total OTPs: <b>{otp_count}x</b>\n" if otp_count > 1 else ""
 
-        # User কে message পাঠাও
-        # tracked number থেকে platform ও country বের করো
         platform_name = ""
         country_name = ""
         for t in tracked:
@@ -263,7 +240,7 @@ def notify_user(raw_phone, otp):
                 platform_name = t.get("platform", "")
                 country_name = t.get("country", "")
                 break
-        
+
         msg = (
             f"✅ <b>OTP Received!</b>\n"
             f"🌍 {country_name} ({platform_name})\n\n"
@@ -283,15 +260,15 @@ def notify_user(raw_phone, otp):
         )
 
         if r.ok:
-            print(f"✅ OTP sent to user {matched_uid} | Number: {display_number} | OTP: {otp} | Earned: {earn} USDT")
+            print(f"✅ OTP sent to {matched_uid} | {display_number} | {otp} | +{earn} USDT")
         else:
-            print(f"⚠️ Failed to send to user {matched_uid}: {r.text}")
+            print(f"⚠️ Failed to send: {r.text}")
 
     except Exception as e:
         print(f"⚠️ notify_user error: {e}")
 
 # =======================
-# Telegram - send to OTP group
+# Telegram group
 # =======================
 def build_reply_markup():
     keyboard = [[
@@ -320,18 +297,12 @@ def send_to_group(text, reply_markup=None):
         print("Telegram group error:", e)
         return None
 
-# =======================
-# Unique ID per OTP
-# =======================
 def get_item_id(item):
     otp = extract_otp(item.get("message") or "")
     phone = item.get("num") or item.get("phone") or ""
     dt = item.get("dt") or item.get("time") or ""
     return hashlib.md5(f"{phone}-{otp}-{dt}".encode()).hexdigest()
 
-# =======================
-# Format group message
-# =======================
 def format_group_message(item):
     raw_phone = item.get("num") or item.get("phone") or ""
     message = item.get("message") or item.get("msg") or ""
@@ -361,9 +332,6 @@ def format_group_message(item):
 
     return text, otp, raw_phone
 
-# =======================
-# Init - mark existing as seen
-# =======================
 def init_seen():
     seen = load_seen()
     data = fetch_hadi()
@@ -375,47 +343,53 @@ def init_seen():
     return seen
 
 # =======================
-# Main Loop
+# Main Loop — auto restart on crash
 # =======================
 def main():
     print("🚀 OTP Monitor started...")
-    print(f"📁 Looking for users_data.json at: {USERS_FILE.absolute()}")
-    seen = init_seen()
+    print(f"📁 Data dir: {DATA_DIR}")
+    print(f"📁 Users file: {USERS_FILE.absolute()}")
 
-    try:
-        while True:
-            data = fetch_hadi()
-            if not data or data.get("status") == "error":
-                time.sleep(POLL_INTERVAL)
-                continue
+    while True:  # ✅ Outer loop — crash হলে restart
+        try:
+            seen = init_seen()
+            while True:
+                try:
+                    data = fetch_hadi()
+                    if not data or data.get("status") == "error":
+                        time.sleep(POLL_INTERVAL)
+                        continue
 
-            for item in data.get("data", []):
-                item_id = get_item_id(item)
-                if item_id in seen:
-                    continue
+                    for item in data.get("data", []):
+                        item_id = get_item_id(item)
+                        if item_id in seen:
+                            continue
 
-                group_text, otp, raw_phone = format_group_message(item)
+                        group_text, otp, raw_phone = format_group_message(item)
 
-                if not otp:
-                    seen.add(item_id)
-                    save_seen(seen)
-                    continue
+                        if not otp:
+                            seen.add(item_id)
+                            save_seen(seen)
+                            continue
 
-                # 1. Send to OTP group
-                res = send_to_group(group_text, reply_markup=build_reply_markup())
+                        send_to_group(group_text, reply_markup=build_reply_markup())
+                        notify_user(raw_phone, otp)
 
-                # 2. Notify user in bot inbox
-                notify_user(raw_phone, otp)
+                        seen.add(item_id)
+                        save_seen(seen)
 
-                seen.add(item_id)
-                save_seen(seen)
+                    time.sleep(POLL_INTERVAL)
 
-            time.sleep(POLL_INTERVAL)
+                except Exception as e:
+                    print(f"⚠️ Inner loop error: {e}")
+                    time.sleep(5)
 
-    except KeyboardInterrupt:
-        print("🛑 Stopped.")
-    except Exception as e:
-        print(f"⚠️ Fatal error: {e}")
+        except KeyboardInterrupt:
+            print("🛑 Stopped.")
+            break
+        except Exception as e:
+            print(f"⚠️ Fatal error, restarting in 10s: {e}")
+            time.sleep(10)
 
 if __name__ == "__main__":
     main()
