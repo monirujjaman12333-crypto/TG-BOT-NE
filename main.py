@@ -1,7 +1,10 @@
-import subprocess
 import threading
+import socketserver
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import os
+
+# ✅ Port reuse fix — Address already in use সমস্যা দূর হবে
+socketserver.TCPServer.allow_reuse_address = True
 
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -14,14 +17,34 @@ class HealthHandler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-def run_server():
+def run_health_server():
     port = int(os.environ.get("PORT", 8080))
-    HTTPServer(("0.0.0.0", port), HealthHandler).serve_forever()
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    print(f"✅ Health server running on port {port}")
+    server.serve_forever()
 
-threading.Thread(target=run_server, daemon=True).start()
+def run_otp_monitor():
+    try:
+        import otp_monitor
+        print("✅ OTP Monitor started")
+        otp_monitor.main()
+    except Exception as e:
+        print(f"⚠️ OTP Monitor error: {e}")
 
-# শুধু bot.py চালাও — otp_monitor কে bot.py এর ভেতরে thread হিসেবে চালাতে হবে
-subprocess.Popen(["python", "bot.py"])
+def run_bot():
+    try:
+        import bot
+        print("✅ Bot started")
+        bot.main()
+    except Exception as e:
+        print(f"⚠️ Bot error: {e}")
 
-while True:
-    pass
+if __name__ == "__main__":
+    # 1. Health server — একবারই চালু হবে
+    threading.Thread(target=run_health_server, daemon=True).start()
+
+    # 2. OTP Monitor — background thread
+    threading.Thread(target=run_otp_monitor, daemon=True).start()
+
+    # 3. Bot — main thread এ চালাও
+    run_bot()
