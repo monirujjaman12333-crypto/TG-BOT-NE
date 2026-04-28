@@ -46,7 +46,7 @@ default_db = {
         "🇪🇬 Egypt": [], "🇹🇿 Tanzania": [], "🇸🇳 Senegal": [], "🇬🇭 Ghana": [],
         "🇲🇲 Myanmar": [], "🇮🇱 Israel": [], "🇦🇫 Afghanistan": [], "🇪🇹 Ethiopia": [],
         "🇵🇪 Peru (+51)": [], "🇸🇮 Slovenia": [], "🇯🇴 Jordan": [],
-        "🇧🇫 Burkina Faso (+226)": [], "🇦🇹 Austria": [],
+        "🇧🇫 Burkina Faso (+226)": [], "🇦🇹 Austria": [],"🇿🇼 Zimbabwe (+263)": [],
     },
     "📸 Instagram": {
         "🇵🇰 Pakistan": [], "🇳🇵 Nepal": [], "🇧🇷 Brazil": [], "🇨🇳 China": [],
