@@ -79,7 +79,7 @@ COUNTRY_CODE_NAME = {
     "855": "🇰🇭 Cambodia", "992": "🇹🇯 Tajikistan", "226": "🇧🇫 Burkina Faso",
     "251": "🇪🇹 Ethiopia", "967": "🇾🇪 Yemen", "386": "🇸🇮 Slovenia",
     "962": "🇯🇴 Jordan", "254": "🇰🇪 Kenya", "255": "🇹🇿 Tanzania",
-    "221": "🇸🇳 Senegal", "972": "🇮🇱 Israel", "93": "🇦🇫 Afghanistan",
+    "221": "🇸🇳 Senegal", "972": "🇮🇱 Israel", "93": "🇦🇫 Afghanistan","263": "🇿🇼 Zimbabwe",
 }
 
 def infer_country(phone, country_field=None):
